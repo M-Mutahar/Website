@@ -1,0 +1,121 @@
+// Prisma schema for Ledgerline
+// Run `npx prisma db push` after setting DATABASE_URL in .env
+//
+// MIGRATION NOTE (from the previous version of this schema):
+// User.plan / callsAllowed / callsUsed / stripeSubscriptionId are GONE.
+// Replaced with a single creditsRemaining balance + freeCreditsGranted flag,
+// and a CreditTransaction ledger for full history. If you have existing rows
+// under the old schema, this is a breaking change — `prisma db push` will
+// drop the old columns. Fine for a pre-launch MVP with no real users yet;
+// write a manual data migration first if you already have production data.
+
+datasource db {
+  provider = "postgresql" // swap to "sqlite" for local dev if you don't have Postgres yet
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+
+  // --- universal credit wallet ---
+  creditsRemaining   Int     @default(0)
+  freeCreditsGranted Boolean @default(false) // guards the one-time signup bonus — see lib/credits.ts
+
+  stripeCustomerId String? @unique
+
+  accounts     Account[]
+  sessions     Session[]
+  transactions CreditTransaction[]
+  extractions  Extraction[]
+  createdAt    DateTime  @default(now())
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Full audit trail of every credit change. Every grant, purchase, and
+// usage deduction writes one row here — the User.creditsRemaining field
+// is the current balance, this table is how it got there.
+model CreditTransaction {
+  id                     String   @id @default(cuid())
+  userId                 String
+  amount                 Int      // positive = credit added, negative = credit spent
+  type                   String   // FREE_GRANT | PURCHASE | USAGE | REFUND | ADMIN_ADJUSTMENT
+  description            String?
+  stripeSessionId        String?
+  stripePaymentIntentId  String?
+  createdAt              DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// One row per processed Stripe webhook event. The unique constraint on
+// eventId is what makes the webhook idempotent — see the insert-first,
+// catch-the-conflict pattern in app/api/stripe/webhook/route.ts.
+model StripeEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  processedAt DateTime @default(now())
+}
+
+// Doubles as both the result cache and the usage-history log (Section 14).
+// `tool` + `creditsUsed` are what let future tools (receipt_extractor, etc.)
+// share this same table instead of needing a separate one.
+model Extraction {
+  id           String   @id @default(cuid())
+  userId       String
+  tool         String   @default("invoice_extractor")
+  fileName     String
+  status       String   // "completed" | "failed"
+  creditsUsed  Int      @default(0)
+  resultJson   String?  @db.Text
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
