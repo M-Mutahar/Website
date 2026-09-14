@@ -1,8 +1,11 @@
-// Calls the Claude API to turn raw invoice text into structured JSON.
+// Sends a validated invoice file directly to Claude for structured extraction.
 // Uses Haiku deliberately — this task is well-specified extraction, not
 // open-ended reasoning, so the cheaper model is the right cost/quality
-// tradeoff here. See product-self-knowledge for current model strings if
-// this ever needs to change.
+// tradeoff here.
+//
+// This replaced the previous OCR-then-Claude pipeline. Claude reads the
+// file natively (vision for images, document parsing for PDFs), which is
+// more accurate than running tesseract.js first and sending lossy text.
 
 export type ExtractedInvoice = {
   invoice_number: string | null;
@@ -23,11 +26,30 @@ export type ExtractedInvoice = {
 // "still being configured" message instead of a generic error.
 export class ClaudeNotConfiguredError extends Error {}
 
-const SYSTEM_PROMPT = `Extract invoice data from the text below. Respond with ONLY a JSON object, no markdown fences, no commentary, matching exactly this shape:
+const SYSTEM_PROMPT = `Extract invoice data from the document below. Respond with ONLY a JSON object, no markdown fences, no commentary, matching exactly this shape:
 {"invoice_number":null,"invoice_date":null,"due_date":null,"vendor":{"name":null,"address":null,"tax_id":null},"customer":{"name":null,"address":null},"currency":null,"subtotal":null,"tax":null,"discount":null,"total":null,"line_items":[{"description":null,"quantity":null,"unit_price":null,"total":null}]}
 Rules: use null for anything not clearly present. Never invent or estimate a value. Preserve every line item found. Amounts are numbers, not strings.`;
 
-export async function extractInvoiceFromText(rawText: string): Promise<ExtractedInvoice> {
+// Anthropic Messages API: PDFs use content type "document", images use "image".
+// Both accept a base64-encoded source. See:
+// https://platform.claude.com/docs/en/build-with-claude/vision
+// https://platform.claude.com/docs/en/build-with-claude/pdf-support
+function buildContentBlock(buffer: Buffer, mimeType: string) {
+  const isPdf = mimeType === "application/pdf";
+  return {
+    type: isPdf ? "document" : "image",
+    source: {
+      type: "base64",
+      media_type: mimeType,
+      data: buffer.toString("base64"),
+    },
+  };
+}
+
+export async function extractInvoiceFromFile(
+  buffer: Buffer,
+  mimeType: string
+): Promise<ExtractedInvoice> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new ClaudeNotConfiguredError("ANTHROPIC_API_KEY is not set");
 
@@ -42,7 +64,18 @@ export async function extractInvoiceFromText(rawText: string): Promise<Extracted
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: rawText }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            buildContentBlock(buffer, mimeType),
+            {
+              type: "text",
+              text: "Extract the invoice data from this document. Return ONLY the JSON object, no markdown fences, no commentary.",
+            },
+          ],
+        },
+      ],
     }),
   });
 
@@ -65,10 +98,6 @@ export async function extractInvoiceFromText(rawText: string): Promise<Extracted
   return parsed as ExtractedInvoice;
 }
 
-// A light structural check, not a full JSON-schema library — this is
-// exactly the kind of "don't overengineer" tradeoff worth making for an
-// MVP: it catches a malformed/truncated response without adding a
-// dependency for something this simple.
 function isValidExtractionShape(value: any): boolean {
   if (!value || typeof value !== "object") return false;
   const requiredTopLevel = [

@@ -13,14 +13,13 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
+    "@netlify/plugin-nextjs": "^5.15.13",
     "@prisma/client": "^5.20.0",
     "next": "14.2.5",
     "next-auth": "^4.24.7",
-    "pdf-parse": "^1.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "stripe": "^16.8.0",
-    "tesseract.js": "^5.1.1"
+    "stripe": "^16.8.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",

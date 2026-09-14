@@ -5,7 +5,7 @@ import type { ExtractedInvoice } from "@/lib/extract";
 
 // These labels are cosmetic, not tied to real server-sent progress events —
 // the backend does one request. They're ordered to match the ACTUAL
-// sequence the server executes (upload → OCR → Claude → persist), so
+// sequence the server executes (upload → Claude reads file → persist), so
 // they're an honest approximation of what's happening, not a fake animation.
 const STAGES = ["Uploading invoice…", "Reading document…", "Extracting invoice data…", "Creating JSON…"];
 

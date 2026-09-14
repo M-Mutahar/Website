@@ -90,8 +90,8 @@ export default function Home() {
           One upload in, one structured record out.
         </h2>
         <p className="text-charcoal/75 max-w-[58ch] mb-12">
-          PDF, PNG, or JPG goes in. Ledgerline extracts the text, sends it to
-          Claude for structured extraction, and hands back clean JSON.
+          PDF, PNG, or JPG goes in. Claude reads the document directly
+          and hands back clean structured JSON.
         </p>
 
         <div className="grid md:grid-cols-3 gap-6 items-center mb-12">
@@ -103,7 +103,7 @@ export default function Home() {
           <div className="border border-charcoal/20 bg-ivory p-6 text-center">
             <div className="font-mono text-sm text-charcoal/60 mb-2">step 2</div>
             <div className="font-semibold">AI Extraction</div>
-            <div className="text-xs text-charcoal/50 mt-1">OCR + Claude</div>
+            <div className="text-xs text-charcoal/50 mt-1">Claude AI</div>
           </div>
           <div className="border border-charcoal/20 bg-ivory p-6 text-center">
             <div className="font-mono text-sm text-charcoal/60 mb-2">step 3</div>
